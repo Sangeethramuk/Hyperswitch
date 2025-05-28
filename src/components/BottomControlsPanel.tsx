@@ -15,7 +15,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PAYMENT_METHODS } from '@/lib/constants'; 
+import { PAYMENT_METHODS } from '@/lib/constants';
 import type { ControlsState, PaymentMethod, ProcessorPaymentMethodMatrix, ProcessorIncidentStatus, StructuredRule, ConditionField, ConditionOperator, MerchantConnector } from '@/lib/types';
 import { Settings2, TrendingUp, Zap, VenetianMaskIcon, AlertTriangle, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
@@ -84,6 +84,7 @@ const formSchema = z.object({
   failureCardExpYear: z.string().optional(),
   failureCardHolderName: z.string().optional(),
   failureCardCvc: z.string().optional(),
+  connector_wise_failure_percentage: z.map(z.string(), z.number().min(0).max(100)).optional(), // Connector-wise failure percentage
   failurePercentage: z.number().min(0).max(100).optional(),
   explorationPercent: z.number().min(0).max(100).optional(), // Added explorationPercent
   selectedRoutingParams: z.object({
@@ -110,30 +111,34 @@ interface BottomControlsPanelProps {
   onFormChange: (data: FormValues) => void;
   initialValues?: Partial<FormValues>;
   merchantConnectors: MerchantConnector[];
-  connectorToggleStates: Record<string, boolean>; 
-  onConnectorToggleChange: (connectorId: string, newState: boolean) => void; 
-  apiKey: string; 
-  profileId: string; 
-  merchantId: string; 
+  currentValues: FormValues | null;
+  connectorToggleStates: Record<string, boolean>;
+  onConnectorToggleChange: (connectorId: string, newState: boolean) => void;
+  onFailurePercentageChange?: (connectorId: string, percentage: number) => void;
+  apiKey: string;
+  profileId: string;
+  merchantId: string;
 }
 
 const BOTTOM_PANEL_HEIGHT = "350px";
 
-export function BottomControlsPanel({ 
-  onFormChange, 
-  initialValues, 
+export function BottomControlsPanel({
+  onFormChange,
+  initialValues,
+  currentValues,
   merchantConnectors,
-  connectorToggleStates, 
-  onConnectorToggleChange, 
-  apiKey, 
-  profileId, 
-  merchantId, 
+  connectorToggleStates,
+  onConnectorToggleChange,
+  onFailurePercentageChange = () => { },
+  apiKey,
+  profileId,
+  merchantId,
 }: BottomControlsPanelProps) {
   const { toast } = useToast();
   const [successBasedAlgorithmId, setSuccessBasedAlgorithmId] = useState<string | null>(null);
   // const [activeRoutingAlgorithm, setActiveRoutingAlgorithm] = useState<any | null>(null); // Removed
   // const [isLoadingActiveRouting, setIsLoadingActiveRouting] = useState<boolean>(false); // Removed
-  
+
   const dynamicDefaults = useMemo(() => {
     const matrix: ProcessorPaymentMethodMatrix = {};
     const incidents: ProcessorIncidentStatus = {};
@@ -142,7 +147,7 @@ export function BottomControlsPanel({
     (merchantConnectors || []).forEach(connector => {
       const key = connector.merchant_connector_id || connector.connector_name;
       matrix[key] = PAYMENT_METHODS.reduce((acc, method) => {
-        acc[method] = false; 
+        acc[method] = false;
         return acc;
       }, {} as Record<PaymentMethod, boolean>);
       incidents[key] = null;
@@ -194,7 +199,7 @@ export function BottomControlsPanel({
       ...loadInitialCardDetails(), // localStorage overrides props and static defaults for the fields it contains
     },
   });
-  
+
   // const isSuccessBasedRoutingEnabledWatched = form.watch("isSuccessBasedRoutingEnabled"); // No longer needed for effect
   // const previousIsSuccessBasedRoutingEnabledRef = useRef<boolean | undefined>(); // No longer needed
 
@@ -236,32 +241,32 @@ export function BottomControlsPanel({
 
   useEffect(() => {
     if (merchantConnectors && merchantConnectors.length > 0) {
-        const currentFormValues = form.getValues();
-        form.reset({
-            ...currentFormValues, 
-            ...initialValues, 
-            processorMatrix: dynamicDefaults.matrix, 
-            processorIncidents: dynamicDefaults.incidents,
-            processorWiseSuccessRates: dynamicDefaults.rates,
-        });
+      const currentFormValues = form.getValues();
+      form.reset({
+        ...currentFormValues,
+        ...initialValues,
+        processorMatrix: dynamicDefaults.matrix,
+        processorIncidents: dynamicDefaults.incidents,
+        processorWiseSuccessRates: dynamicDefaults.rates,
+      });
 
-        const firstConnectorId = merchantConnectors[0].merchant_connector_id || merchantConnectors[0].connector_name;
-        if (firstConnectorId && (!selectedIncidentProcessor || !merchantConnectors.some(c => (c.merchant_connector_id || c.connector_name) === selectedIncidentProcessor))) {
-            setSelectedIncidentProcessor(firstConnectorId);
-        }
+      const firstConnectorId = merchantConnectors[0].merchant_connector_id || merchantConnectors[0].connector_name;
+      if (firstConnectorId && (!selectedIncidentProcessor || !merchantConnectors.some(c => (c.merchant_connector_id || c.connector_name) === selectedIncidentProcessor))) {
+        setSelectedIncidentProcessor(firstConnectorId);
+      }
     } else {
-        const currentFormValues = form.getValues();
-        form.reset({
-            ...currentFormValues,
-            ...initialValues,
-            processorMatrix: {},
-            processorIncidents: {},
-            processorWiseSuccessRates: {},
-            ruleActionProcessorId: undefined,
-        });
-        setSelectedIncidentProcessor('');
+      const currentFormValues = form.getValues();
+      form.reset({
+        ...currentFormValues,
+        ...initialValues,
+        processorMatrix: {},
+        processorIncidents: {},
+        processorWiseSuccessRates: {},
+        ruleActionProcessorId: undefined,
+      });
+      setSelectedIncidentProcessor('');
     }
-}, [merchantConnectors, dynamicDefaults, form, initialValues, selectedIncidentProcessor]);
+  }, [merchantConnectors, dynamicDefaults, form, initialValues, selectedIncidentProcessor]);
 
 
   useEffect(() => {
@@ -277,7 +282,7 @@ export function BottomControlsPanel({
             action: { type: 'ROUTE_TO_PROCESSOR', processorId: formData.ruleActionProcessorId },
           };
         }
-        const { overallSuccessRate, ...outputValues } = formData as any; 
+        const { overallSuccessRate, ...outputValues } = formData as any;
         onFormChange({ ...outputValues, structuredRule: rule } as FormValues);
 
         // Save card details to localStorage
@@ -310,20 +315,20 @@ export function BottomControlsPanel({
     const initialFormValues = form.getValues();
     const initialParsed = formSchema.safeParse(initialFormValues);
     if (initialParsed.success) {
-        const initialFormData = initialParsed.data;
-        let initialRule: StructuredRule | null = null;
-        if (initialFormData.ruleConditionField && initialFormData.ruleConditionOperator && initialFormData.ruleConditionValue && initialFormData.ruleActionProcessorId) {
-            initialRule = {
-                id: 'rule1',
-                condition: { field: initialFormData.ruleConditionField, operator: initialFormData.ruleConditionOperator, value: initialFormData.ruleConditionValue },
-                action: { type: 'ROUTE_TO_PROCESSOR', processorId: initialFormData.ruleActionProcessorId }
-            };
-        }
-        const { overallSuccessRate, ...outputValues } = initialFormData as any;
-        onFormChange({ ...outputValues, structuredRule: initialRule } as FormValues);
+      const initialFormData = initialParsed.data;
+      let initialRule: StructuredRule | null = null;
+      if (initialFormData.ruleConditionField && initialFormData.ruleConditionOperator && initialFormData.ruleConditionValue && initialFormData.ruleActionProcessorId) {
+        initialRule = {
+          id: 'rule1',
+          condition: { field: initialFormData.ruleConditionField, operator: initialFormData.ruleConditionOperator, value: initialFormData.ruleConditionValue },
+          action: { type: 'ROUTE_TO_PROCESSOR', processorId: initialFormData.ruleActionProcessorId }
+        };
+      }
+      const { overallSuccessRate, ...outputValues } = initialFormData as any;
+      onFormChange({ ...outputValues, structuredRule: initialRule } as FormValues);
     } else {
-        const { overallSuccessRate, ...outputValues } = initialFormValues as any;
-        onFormChange({ ...outputValues, structuredRule: null } as FormValues);
+      const { overallSuccessRate, ...outputValues } = initialFormValues as any;
+      onFormChange({ ...outputValues, structuredRule: null } as FormValues);
     }
 
     return () => subscription.unsubscribe();
@@ -368,28 +373,28 @@ export function BottomControlsPanel({
                     <FormField
                       control={control}
                       name="totalPayments"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Total Payments</FormLabel>
-                        <FormControl>
-                          <Input type="number" placeholder="e.g., 1000" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="md:col-span-2">
-                    <FormLabel>Payment Methods</FormLabel>
-                    <div className="flex items-center space-x-3 mt-2 p-3 border rounded-md bg-muted/50">
-                      <Checkbox id="payment-method-card" checked={true} disabled={true} />
-                      <Label htmlFor="payment-method-card" className="font-normal text-muted-foreground">
-                        Card (Selected by default)
-                      </Label>
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Total Payments</FormLabel>
+                          <FormControl>
+                            <Input type="number" placeholder="e.g., 1000" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="md:col-span-2">
+                      <FormLabel>Payment Methods</FormLabel>
+                      <div className="flex items-center space-x-3 mt-2 p-3 border rounded-md bg-muted/50">
+                        <Checkbox id="payment-method-card" checked={true} disabled={true} />
+                        <Label htmlFor="payment-method-card" className="font-normal text-muted-foreground">
+                          Card (Selected by default)
+                        </Label>
+                      </div>
+                      <FormDescription className="text-xs mt-1">
+                        Currently, "Card" is the only enabled payment method.
+                      </FormDescription>
                     </div>
-                    <FormDescription className="text-xs mt-1">
-                      Currently, "Card" is the only enabled payment method.
-                    </FormDescription>
-                  </div>
                   </div>
 
                   {/* Right half for Payment Request Payload */}
@@ -447,7 +452,7 @@ export function BottomControlsPanel({
                       </pre>
                     </ScrollArea>
                     <FormDescription className="text-xs">
-                      This is an example of the payload sent to the /payments API. 
+                      This is an example of the payload sent to the /payments API.
                       Actual values for profile_id and card details are substituted during simulation.
                       The 'routing' object is added if Success Based Routing is enabled and a connector is selected by the SR API.
                     </FormDescription>
@@ -478,7 +483,7 @@ export function BottomControlsPanel({
                         );
                       })}
                     </div>
-                     <FormDescription className="text-xs mt-2">
+                    <FormDescription className="text-xs mt-2">
                       Toggle connectors on/off. This status is reflected in the simulation.
                     </FormDescription>
                   </CardContent>
@@ -489,10 +494,10 @@ export function BottomControlsPanel({
                 {/* Removed Card for Currently Active Routing Algorithm */}
                 <Card>
                   <CardHeader className="pb-3">
-                     <div className="flex items-center">
-                        <Settings2 className="mr-2 h-5 w-5 text-primary" /> 
-                        <CardTitle className="text-base">Intelligent Routing Parameters</CardTitle>
-                      </div>
+                    <div className="flex items-center">
+                      <Settings2 className="mr-2 h-5 w-5 text-primary" />
+                      <CardTitle className="text-base">Intelligent Routing Parameters</CardTitle>
+                    </div>
                     <CardDescription className="text-xs pt-1">Select and configure intelligent routing strategies. Fields are shown if a strategy is enabled.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -518,7 +523,7 @@ export function BottomControlsPanel({
                     </div>
 
                     {(form.watch("isSuccessBasedRoutingEnabled")) && (
-                    <>
+<>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t mt-2">
                         <FormField
                           control={control}
@@ -575,13 +580,13 @@ export function BottomControlsPanel({
                         {/* End of Grouping */}
                         {/* defaultSuccessRate field removed */}
                         {/* currentBlockThresholdDurationInMins and currentBlockThresholdMaxTotalCount fields are now effectively replaced by minAggregatesSize and maxAggregatesSize for API calls */}
-                      </div>
-                      <div className="flex justify-end mt-4">
-                        {/* Update Config Button Removed as per previous changes */}
-                      </div>
-                    </>
-                  )}
-                  <div className="space-y-3 p-3 border rounded-md bg-card mt-4">
+                        </div>
+                        <div className="flex justify-end mt-4">
+                          {/* Update Config Button Removed as per previous changes */}
+                        </div>
+                      </>
+                    )}
+                    <div className="space-y-3 p-3 border rounded-md bg-card mt-4">
                       <FormLabel className="text-sm font-medium">Routing Parameters</FormLabel>
                       <FormDescription className="text-xs">
                         Select parameters to consider for routing decisions.
@@ -757,23 +762,26 @@ export function BottomControlsPanel({
                       <CardDescription className="text-xs">Set the likelihood of a transaction failing.</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-4">
-                      <FormField
-                        control={control}
-                        name="failurePercentage"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs">Failure Rate: {field.value}%</FormLabel>
-                            <FormControl>
-                              <Slider
-                                defaultValue={[field.value || 20]}
-                                min={0} max={100} step={1}
-                                onValueChange={(value: number[]) => { field.onChange(value[0]); }}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {
+                        Array.from(currentValues?.connector_wise_failure_percentage?.entries() || []).map(([connector, failureRate]) => (
+                          <FormField
+                            key={connector}
+                            control={control}
+                            name={`failurePercentage`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-xs">{connector} Failure Rate: {failureRate}%</FormLabel>
+                                <FormControl>
+                                  <Slider
+                                    defaultValue={[failureRate || 50]}
+                                    min={0} max={100} step={1}
+                                    onValueChange={(value: number[]) => { field.onChange(value[0]); onFailurePercentageChange(connector, value[0]); }}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )} />
+                        ))}
                     </CardContent>
                   </Card>
                 </div>

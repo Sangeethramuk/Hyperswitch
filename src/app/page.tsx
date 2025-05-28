@@ -268,71 +268,10 @@ export default function HomePage() {
     }
   }, [toast]); // currentControls is not a direct dependency here, it's passed as an argument
 
-
-  // This useEffect is no longer needed as the initial modal opening is handled by the mount effect
-  // useEffect(() => {
-  //   if (!apiKey && !profileId && !merchantId) {
-  //     setIsApiCredentialsModalOpen(true);
-  //   }
-  // }, [apiKey, profileId, merchantId]);
-
-  // const prevCurrentControlsRef = useRef<FormValues | null>(null); // Removed as the useEffect using it is removed
-
-  // useEffect(() => { // This useEffect has been moved to BottomControlsPanel.tsx
-  //   const prevControls = prevCurrentControlsRef.current;
-  //   const currentRuleEnabled = currentControls?.isSuccessBasedRoutingEnabled; 
-  //   const prevRuleEnabled = prevControls?.isSuccessBasedRoutingEnabled;
-
-  //   if (currentRuleEnabled === true && (prevRuleEnabled === false || prevRuleEnabled === undefined)) {
-  //     // Rule was just toggled from false or undefined to true
-  //     if (merchantId && profileId && apiKey) {
-  //       const apiUrl = `https://sandbox.hyperswitch.io/account/${merchantId}/business_profile/${profileId}/dynamic_routing/set_volume_split?split=100`;
-        
-  //       console.log(`Success rate rule enabled. Calling: POST ${apiUrl}`);
-        
-  //       fetch(apiUrl, {
-  //         method: 'POST',
-  //         headers: {
-  //           'api-key': apiKey,
-  //         },
-  //         // No body for this specific cURL
-  //       })
-  //       .then(async response => {
-  //         if (!response.ok) {
-  //           let errorDetail = `HTTP error! status: ${response.status}`;
-  //           try {
-  //             // Attempt to get more detailed error message if API returns JSON error
-  //             const errorData = await response.json();
-  //             errorDetail = errorData.message || JSON.stringify(errorData) || errorDetail;
-  //           } catch (e) {
-  //             // If parsing JSON fails, stick with the status text or get response text
-  //             const textError = await response.text().catch(() => "");
-  //             errorDetail = textError || errorDetail;
-  //           }
-  //           console.error("Failed to set volume split:", errorDetail);
-  //           toast({ title: "API Error", description: `Failed to set volume split: ${errorDetail}`, variant: "destructive" });
-  //           return; 
-  //         }
-  //         // If response.ok is true, assume success even with no body
-  //         console.log("Successfully set volume split. Status:", response.status);
-  //         toast({ title: "Success", description: "Dynamic routing volume split set." });
-  //       })
-  //       .catch(error => {
-  //         console.error("Error setting volume split (fetch catch):", error);
-  //         toast({ title: "Network Error", description: `Could not set volume split: ${error.message}`, variant: "destructive" });
-  //       });
-  //     } else {
-  //       console.warn("Cannot set volume split: API credentials (merchantId, profileId, apiKey) are missing.");
-  //       toast({ title: "Configuration Error", description: "API credentials missing, cannot set volume split.", variant: "destructive" });
-  //     }
-  //   }
-
-  //   prevCurrentControlsRef.current = currentControls;
-  // }, [currentControls, merchantId, profileId, apiKey, toast]);
-
   const handleControlsChange = useCallback((data: FormValues) => {
     setCurrentControls(prev => {
       const existingOverallSuccessRate = prev ? prev.overallSuccessRate : 0;
+      console.log("handleControlsChange called with data:", existingOverallSuccessRate, data);
       return {
         ...(prev || {}), 
         ...data,
@@ -405,6 +344,10 @@ export default function HomePage() {
             processorIncidents: initialProcessorIncidents,
             processorMatrix: initialProcessorMatrix,
             overallSuccessRate: base.overallSuccessRate || 0,
+            connector_wise_failure_percentage: connectorsData.reduce((acc, connector) => {
+              acc.set(connector.connector_name, 50); // Default to 50% for all connectors
+              return acc;
+            }, new Map<string, number>()),
         };
       });
 
@@ -420,7 +363,21 @@ export default function HomePage() {
       setIsLoadingMerchantConnectors(false);
     }
   };
-  
+  const handleFailurePercentageChange = (connectorId: string, newPercentage: number) => {
+    setCurrentControls(prev => {
+      if (!prev) return prev ?? null;
+      const updatedFailurePercentage = new Map(prev.connector_wise_failure_percentage);
+      if (newPercentage < 0 || newPercentage > 100) {
+        toast({ title: "Invalid Percentage", description: "Failure percentage must be between 0 and 100.", variant: "destructive" });
+        return prev;
+      }
+      updatedFailurePercentage.set(connectorId, newPercentage);
+      return {
+        ...prev,
+        connector_wise_failure_percentage: updatedFailurePercentage,
+      };
+    });
+  };
   const handleConnectorToggleChange = async (connectorId: string, newState: boolean) => {
     const originalState = connectorToggleStates[connectorId];
     setConnectorToggleStates(prev => ({ ...prev, [connectorId]: newState }));
@@ -1095,9 +1052,9 @@ export default function HomePage() {
         </Tabs>
       </AppLayout>
       <BottomControlsPanel
-        onFormChange={handleControlsChange} merchantConnectors={merchantConnectors}
+        onFormChange={handleControlsChange} merchantConnectors={merchantConnectors} currentValues={currentControls}
         connectorToggleStates={connectorToggleStates} onConnectorToggleChange={handleConnectorToggleChange}
-        apiKey={apiKey} profileId={profileId} merchantId={merchantId}
+        apiKey={apiKey} profileId={profileId} merchantId={merchantId} onFailurePercentageChange={handleFailurePercentageChange}
       />
       <Dialog open={isApiCredentialsModalOpen} onOpenChange={setIsApiCredentialsModalOpen}>
         <DialogContent className="sm:max-w-md">
