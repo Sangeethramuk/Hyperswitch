@@ -271,7 +271,6 @@ export default function HomePage() {
   const handleControlsChange = useCallback((data: FormValues) => {
     setCurrentControls(prev => {
       const existingOverallSuccessRate = prev ? prev.overallSuccessRate : 0;
-      console.log("handleControlsChange called with data:", existingOverallSuccessRate, data);
       return {
         ...(prev || {}), 
         ...data,
@@ -459,6 +458,26 @@ export default function HomePage() {
     });
   };
 
+  const getCarddetailsForPayment = (currentControls: FormValues, connectorNameToUse: string): any => {
+    let cardDetailsToUse;
+    const randomNumber = Math.random() * 100;
+    let currentFailurePercentage = currentControls.connector_wise_failure_percentage?.get(connectorNameToUse) || 50; // Default to 50% if not set
+    if (randomNumber < currentFailurePercentage) {
+      cardDetailsToUse = {
+        card_number: currentControls.failureCardNumber || "4000000000000000", card_exp_month: currentControls.failureCardExpMonth || "12",
+        card_exp_year: currentControls.failureCardExpYear || "26", card_holder_name: currentControls.failureCardHolderName || "Jane Roe",
+        card_cvc: currentControls.failureCardCvc || "999",
+      };
+    } else {
+      cardDetailsToUse = {
+        card_number: currentControls.successCardNumber || "4242424242424242", card_exp_month: currentControls.successCardExpMonth || "10",
+        card_exp_year: currentControls.successCardExpYear || "25", card_holder_name: currentControls.successCardHolderName || "Joseph Doe",
+        card_cvc: currentControls.successCardCvc || "123",
+      };
+    }
+    return cardDetailsToUse;
+  };
+
   const processTransactionBatch = useCallback(async () => {
     console.log(
       `PTB ENTRY: processed=${processedPaymentsCount}, total=${currentControls?.totalPayments}, stop=${isStoppingRef.current}, state=${simulationState}, proc=${isProcessingBatchRef.current}`
@@ -499,28 +518,13 @@ export default function HomePage() {
         if (isStoppingRef.current || signal.aborted) break;
         
         const paymentMethodForAPI = "card";
-        let cardDetailsToUse;
-        const randomNumber = Math.random() * 100;
-        if (currentControls.failurePercentage !== undefined && randomNumber < currentControls.failurePercentage) {
-          cardDetailsToUse = {
-            card_number: currentControls.failureCardNumber || "4000000000000000", card_exp_month: currentControls.failureCardExpMonth || "12",
-            card_exp_year: currentControls.failureCardExpYear || "26", card_holder_name: currentControls.failureCardHolderName || "Jane Roe",
-            card_cvc: currentControls.failureCardCvc || "999",
-          };
-        } else {
-          cardDetailsToUse = {
-            card_number: currentControls.successCardNumber || "4242424242424242", card_exp_month: currentControls.successCardExpMonth || "10",
-            card_exp_year: currentControls.successCardExpYear || "25", card_holder_name: currentControls.successCardHolderName || "Joseph Doe",
-            card_cvc: currentControls.successCardCvc || "123",
-          };
-        }
 
         const paymentData = {
           amount: 6540, currency: "USD", confirm: true, profile_id: profileId, capture_method: "automatic",
           authentication_type: "no_three_ds",
           customer: { id: `cus_sim_${Date.now()}_${i}`, name: "John Doe", email: "customer@example.com", phone: "9999999999", phone_country_code: "+1" },
           payment_method: paymentMethodForAPI, payment_method_type: "credit",
-          payment_method_data: { card: cardDetailsToUse, billing: {
+          payment_method_data: { card:getCarddetailsForPayment(currentControls, ""), billing: {
               address: { line1: "1467", line2: "Harrison Street", line3: "Harrison Street", city: "San Francisco", state: "California", zip: "94122", country: "US", first_name: "Joseph", last_name: "Doe" },
               phone: { number: "8056594427", country_code: "+91" }, email: "guest@example.com"
           }},
@@ -583,6 +587,7 @@ export default function HomePage() {
                 merchant_connector_id: connectorIdForMca
               };
               (paymentData as any).routing = routingObject;
+              (paymentData as any).payment_method_data.card = getCarddetailsForPayment(currentControls, connectorNameToUse);
               console.log(`[PTB] SBR Enabled: Routing to connector (name: ${connectorNameToUse}, mca_id: ${connectorIdForMca}, selected_label: ${returnedConnectorLabelFromApi}) chosen by success rate.`);
             } else {
               console.warn(`[PTB] SBR Enabled: Returned connector label '${returnedConnectorLabelFromApi}' not found in local list. Default routing will apply.`);
