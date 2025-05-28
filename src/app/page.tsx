@@ -343,7 +343,7 @@ export default function HomePage() {
             processorIncidents: initialProcessorIncidents,
             processorMatrix: initialProcessorMatrix,
             overallSuccessRate: base.overallSuccessRate || 0,
-            connector_wise_failure_percentage: connectorsData.reduce((acc, connector) => {
+            connectorWiseFailurePercentage: connectorsData.filter(connector => connector.disabled == false).reduce((acc, connector) => {
               acc.set(connector.connector_name, 50); // Default to 50% for all connectors
               return acc;
             }, new Map<string, number>()),
@@ -365,7 +365,7 @@ export default function HomePage() {
   const handleFailurePercentageChange = (connectorId: string, newPercentage: number) => {
     setCurrentControls(prev => {
       if (!prev) return prev ?? null;
-      const updatedFailurePercentage = new Map(prev.connector_wise_failure_percentage);
+      const updatedFailurePercentage = new Map(prev.connectorWiseFailurePercentage);
       if (newPercentage < 0 || newPercentage > 100) {
         toast({ title: "Invalid Percentage", description: "Failure percentage must be between 0 and 100.", variant: "destructive" });
         return prev;
@@ -373,7 +373,7 @@ export default function HomePage() {
       updatedFailurePercentage.set(connectorId, newPercentage);
       return {
         ...prev,
-        connector_wise_failure_percentage: updatedFailurePercentage,
+        connectorWiseFailurePercentage: updatedFailurePercentage,
       };
     });
   };
@@ -461,7 +461,7 @@ export default function HomePage() {
   const getCarddetailsForPayment = (currentControls: FormValues, connectorNameToUse: string): any => {
     let cardDetailsToUse;
     const randomNumber = Math.random() * 100;
-    let currentFailurePercentage = currentControls.connector_wise_failure_percentage?.get(connectorNameToUse) || 50; // Default to 50% if not set
+    let currentFailurePercentage = currentControls.connectorWiseFailurePercentage?.get(connectorNameToUse) || -1;
     if (randomNumber < currentFailurePercentage) {
       cardDetailsToUse = {
         card_number: currentControls.failureCardNumber || "4000000000000000", card_exp_month: currentControls.failureCardExpMonth || "12",

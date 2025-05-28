@@ -84,7 +84,7 @@ const formSchema = z.object({
   failureCardExpYear: z.string().optional(),
   failureCardHolderName: z.string().optional(),
   failureCardCvc: z.string().optional(),
-  connector_wise_failure_percentage: z.map(z.string(), z.number().min(0).max(100)).optional(), // Connector-wise failure percentage
+  connectorWiseFailurePercentage: z.map(z.string(), z.number().min(0).max(100)).optional(), // Connector-wise failure percentage
   failurePercentage: z.number().min(0).max(100).optional(),
   explorationPercent: z.number().min(0).max(100).optional(), // Added explorationPercent
   selectedRoutingParams: z.object({
@@ -763,7 +763,7 @@ export function BottomControlsPanel({
                     </CardHeader>
                     <CardContent className="pt-4">
                       {
-                        Array.from(currentValues?.connector_wise_failure_percentage?.entries() || []).map(([connector, failureRate]) => (
+                        Array.from(currentValues?.connectorWiseFailurePercentage?.entries() || []).map(([connector, failureRate]) => (
                           <FormField
                             key={connector}
                             control={control}
