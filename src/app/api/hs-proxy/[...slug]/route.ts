@@ -58,8 +58,8 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ slug: s
      if (targetUrl.includes("dynamic-routing")) {
       console.log(`[HS_PROXY] Dynamic routing request to ${targetUrl}`);
       // print the request body for debugging
-      console.log(request_body);
-      console.log(responseBody);
+      // console.log(request_body);
+      // console.log(responseBody);
     }
 
 
