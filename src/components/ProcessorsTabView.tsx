@@ -19,7 +19,7 @@ export function ProcessorsTabView({
   isLoadingConnectors = false,
 }: ProcessorsTabViewProps) {
   // console.log("ProcessorsTabView rendering. isLoadingConnectors:", isLoadingConnectors, "Number of merchantConnectors:", merchantConnectors?.length, "connectorToggleStates:", connectorToggleStates); // Modified log
-  console.log("ProcessorsTabView rendering. isLoadingConnectors:", isLoadingConnectors, "Number of merchantConnectors:", merchantConnectors?.length);
+  // console.log("ProcessorsTabView rendering. isLoadingConnectors:", isLoadingConnectors, "Number of merchantConnectors:", merchantConnectors?.length);
   return (
     <ScrollArea className="h-full">
       <div className="p-2 md:p-4 lg:p-6">

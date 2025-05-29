@@ -20,7 +20,7 @@ import { PAYMENT_METHODS, /*RULE_STRATEGY_NODES*/ } from '@/lib/constants'; // R
 import { useToast } from '@/hooks/use-toast';
 import { summarizeSimulation } from '@/ai/flows/summarize-simulation-flow'; // AI Summary Re-added
 
-const SIMULATION_INTERVAL_MS = 50; // Interval between individual payment processing attempts
+const SIMULATION_INTERVAL_MS = 150; // Interval between individual payment processing attempts
 
 const LOCALSTORAGE_API_KEY = 'hyperswitch_apiKey';
 const LOCALSTORAGE_PROFILE_ID = 'hyperswitch_profileId';
@@ -141,7 +141,7 @@ export default function HomePage() {
       },
     };
 
-    console.log("[FetchSuccessRate] Payload:", JSON.stringify(payload, null, 2));
+    // console.log("[FetchSuccessRate] Payload:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch('/api/hs-proxy/dynamic-routing/success_rate.SuccessRateCalculator/FetchSuccessRate', { 
@@ -165,7 +165,7 @@ export default function HomePage() {
       // }
 
       const data = await response.json();
-      console.log("[FetchSuccessRate] Response Data:", data);
+      // console.log("[FetchSuccessRate] Response Data:", data);
 
       let srScoresForLog: Record<string, number> | undefined = undefined;
       if (data.labels_with_score && Array.isArray(data.labels_with_score)) {
@@ -190,6 +190,9 @@ export default function HomePage() {
       if (data.labels_with_score && data.labels_with_score.length > 0) {
         // Sort connectors by score in descending order
         const sortedConnectors = data.labels_with_score.sort((a: any, b: any) => b.score - a.score);
+
+        // console.log("[FetchSuccessRate] Sorted connectors by score:", sortedConnectors);
+
         const bestConnector = sortedConnectors[0]; // Pick the first one (highest score)
         
         console.log(`[FetchSuccessRate] Selected connector: ${bestConnector.label} with score ${bestConnector.score} (after sorting)`);
@@ -235,7 +238,7 @@ export default function HomePage() {
       }
     };
 
-    console.log("[UpdateSuccessRateWindow] Payload:", JSON.stringify(payload, null, 2));
+    // console.log("[UpdateSuccessRateWindow] Payload:", JSON.stringify(payload, null, 2));
 
     try {
       const response = await fetch('/api/hs-proxy/dynamic-routing/success_rate.SuccessRateCalculator/UpdateSuccessRateWindow', {
@@ -259,7 +262,7 @@ export default function HomePage() {
           const updateData = responseDataText ? JSON.parse(responseDataText) : null;
           if (updateData && typeof updateData.status === 'number') {
             if (updateData.status === 0) {
-              console.log(`[UpdateSuccessRateWindow] API reported success (status 0) for connector ${connectorNameForApi}. Full response:`, updateData);
+              // console.log(`[UpdateSuccessRateWindow] API reported success (status 0) for connector ${connectorNameForApi}. Full response:`, updateData);
             } else if (updateData.status === 1) {
               console.warn(`[UpdateSuccessRateWindow] API reported failure (status 1) for connector ${connectorNameForApi}. Full response:`, updateData);
               // Optionally, you might want a toast here if status 1 is an actionable error
@@ -615,8 +618,10 @@ export default function HomePage() {
 
     // Apply routing if Success Based Routing is enabled
     if (currentControls.isSuccessBasedRoutingEnabled && returnedConnectorLabel) {
+      console.log("SR enabled")
       const matchedConnector = merchantConnectors.find(mc => mc.connector_name === returnedConnectorLabel);
       if (matchedConnector) {
+        console.log(`Matched connector: ${matchedConnector.connector_name} (${matchedConnector.merchant_connector_id})`);
         (paymentData as any).routing = {
           type: "single",
           data: {

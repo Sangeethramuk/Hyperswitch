@@ -172,7 +172,7 @@ export function BottomControlsPanel({
       currentBlockThresholdMaxTotalCount: 20, // Default for old field
       minAggregatesSize: 5, // Default for new field
       maxAggregatesSize: 10, // Default for new field
-      isSuccessBasedRoutingEnabled: false,
+      isSuccessBasedRoutingEnabled: true,
       ruleConditionField: undefined,
       ruleConditionOperator: undefined,
       ruleConditionValue: undefined,
@@ -564,7 +564,7 @@ export function BottomControlsPanel({
                                 checked={field.value || false}
                                 onCheckedChange={(newCheckedState) => {
                                   // Call the new handler instead of field.onChange directly
-                                  handleSuccessBasedRoutingToggle(newCheckedState);
+                                  handleSuccessBasedRoutingToggle(!newCheckedState);
                                 }}
                               />
                             </FormControl>
