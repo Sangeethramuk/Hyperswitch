@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { PieChart as PieChartIcon } from 'lucide-react'; // Renamed to avoid conflict
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { useEffect, useRef } from 'react';
 
 interface TransactionDistributionChartProps {
   data: Array<{ name: string; value: number; fill?: string }>; // Made fill optional
@@ -12,15 +13,24 @@ interface TransactionDistributionChartProps {
 // Predefined direct HSL color strings for the pie chart
 // These correspond to --chart-1 to --chart-5 from globals.css's dark theme
 const PIE_CHART_COLORS = [
-  'hsl(44, 96%, 51%)', 
-  'hsl(218, 57%, 54%)',   
-  'hsl(354, 70%, 50%)', 
+  'hsl(44, 96%, 51%)',
+  'hsl(218, 57%, 54%)',
+  'hsl(354, 70%, 50%)',
   'hsl(112, 16%, 52%)',
-  'hsl(274, 74%, 66%)',  
+  'hsl(274, 74%, 66%)',
 ];
 
 export function TransactionDistributionChart({ data }: TransactionDistributionChartProps) {
-  const hasData = data && data.length > 0 && data.some(item => item.value > 0);
+  const previousDataRef = useRef<Array<{ name: string; value: number; fill?: string }>>([]);
+
+  useEffect(() => {
+    if (data && data.length > 0 && data.some(item => item.value > 0)) {
+      previousDataRef.current = data;
+    }
+  }, [data]);
+
+  const currentData = (data && data.length > 0 && data.some(item => item.value > 0)) ? data : previousDataRef.current;
+  const hasData = currentData && currentData.length > 0 && currentData.some(item => item.value > 0);
 
   return (
     <Card>
@@ -39,7 +49,7 @@ export function TransactionDistributionChart({ data }: TransactionDistributionCh
                 )}
               />
               <Pie
-                data={data}
+                data={currentData}
                 dataKey="value"
                 nameKey="name"
                 cx="50%"
@@ -56,7 +66,7 @@ export function TransactionDistributionChart({ data }: TransactionDistributionCh
                 stroke="hsl(var(--background))" // Use direct background for stroke between cells
                 strokeWidth={2}
               >
-                {data.map((entry, index) => (
+                {currentData.map((entry, index) => (
                   <Cell 
                     key={`cell-${index}`} 
                     fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} // Use direct colors

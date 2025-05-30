@@ -29,17 +29,25 @@ const LOCALSTORAGE_API_KEY = 'hyperswitch_apiKey';
 const LOCALSTORAGE_PROFILE_ID = 'hyperswitch_profileId';
 const LOCALSTORAGE_MERCHANT_ID = 'hyperswitch_merchantId';
 
-// Type for single payment result
-interface PaymentResult {
-  success: boolean;
-  connector: string | null;
-  routingApproach: TransactionLogEntry['routingApproach'];
-  srScores: Record<string, number> | undefined;
-  transactionNumber: number;
-  status: string;
-  timestamp: number;
+// Type for the outcome of a single payment processing attempt
+interface SinglePaymentOutcome {
+  isSuccess: boolean;
   routedProcessorId: string | null;
+  logEntry: TransactionLogEntry | null;
 }
+
+// The PaymentResult interface seems unused or was intended for a different structure.
+// If it's confirmed unused elsewhere, it could be removed. For now, keeping it commented.
+// interface PaymentResult {
+//   success: boolean;
+//   connector: string | null;
+//   routingApproach: TransactionLogEntry['routingApproach'];
+//   srScores: Record<string, number> | undefined;
+//   transactionNumber: number;
+//   status: string;
+//   timestamp: number;
+//   routedProcessorId: string | null;
+// }
 
 export default function HomePage() {
   const [currentControls, setCurrentControls] = useState<FormValues | null>(null);
@@ -419,6 +427,7 @@ export default function HomePage() {
           processorMatrix: {},
           processorIncidents: {},
           processorWiseSuccessRates: {},
+          isSuccessBasedRoutingEnabled: true, // Default to true
         } as FormValues;
 
         return {
@@ -515,6 +524,7 @@ export default function HomePage() {
           maxAggregatesSize: 10, // New field default
           numberOfBatches: 100, // New batch processing field
           batchSize: 10, // New batch processing field
+          isSuccessBasedRoutingEnabled: true, // Default to true
         } as FormValues;
       }
       const newPwsr: ControlsState['processorWiseSuccessRates'] = {};
@@ -532,11 +542,7 @@ export default function HomePage() {
   const processSinglePayment = useCallback(async (
     paymentIndex: number,
     signal: AbortSignal
-  ): Promise<{
-    isSuccess: boolean;
-    routedProcessorId: string | null;
-    logEntry: TransactionLogEntry | null;
-  }> => {
+  ): Promise<SinglePaymentOutcome> => {
     if (!currentControls || !apiKey || !profileId) {
       throw new Error('Missing required configuration');
     }
@@ -756,28 +762,46 @@ export default function HomePage() {
       const batchIndices = Array.from({ length: paymentsToProcessInBatch }, (_, i) => processedPaymentsCount + i);
 
       let paymentsProcessedThisBatch = 0;
+      let batchResults: SinglePaymentOutcome[] = []; // Use SinglePaymentOutcome[]
+      const batchSpecificProcessorStats: Record<string, { successful: number; failed: number }> = {};
 
       try {
         // Process payments in parallel using Promise.all
-        const batchResults = await Promise.all(
+        batchResults = await Promise.all(
           batchIndices.map(paymentIndex =>
             processSinglePayment(paymentIndex, signal)
+              // Catch ensures Promise.all doesn't fail fast, allowing processing of other results
               .catch(error => {
-                if (error.name === 'AbortError') throw error;
+                if (error.name === 'AbortError') throw error; // Re-throw AbortError to stop batch
                 console.error(`Error processing payment ${paymentIndex}:`, error);
-                return { isSuccess: false, routedProcessorId: null, logEntry: null };
+                // Return a structure consistent with SinglePaymentOutcome for failed/errored payments
+                return { isSuccess: false, routedProcessorId: null, logEntry: null }; 
               })
           )
         );
 
         if (isStoppingRef.current || signal.aborted) return;
 
-        // Update transaction logs and statistics
+        // Update transaction logs and cumulative/batch statistics
+        const newLogsForThisBatch: TransactionLogEntry[] = [];
         batchResults.forEach(result => {
           if (result.logEntry) {
-            setTransactionLogs(prevLogs => [...prevLogs, result.logEntry!]);
+            newLogsForThisBatch.push(result.logEntry);
           }
 
+          // Populate batchSpecificProcessorStats
+          if (result.routedProcessorId) {
+            if (!batchSpecificProcessorStats[result.routedProcessorId]) {
+              batchSpecificProcessorStats[result.routedProcessorId] = { successful: 0, failed: 0 };
+            }
+            if (result.isSuccess) { // Use isSuccess from SinglePaymentOutcome
+              batchSpecificProcessorStats[result.routedProcessorId].successful++;
+            } else {
+              batchSpecificProcessorStats[result.routedProcessorId].failed++;
+            }
+          }
+          
+          // Update overall cumulative stats (accumulatedProcessorStatsRef and accumulatedGlobalStatsRef)
           if (result.routedProcessorId) {
             if (!accumulatedProcessorStatsRef.current[result.routedProcessorId]) {
               accumulatedProcessorStatsRef.current[result.routedProcessorId] = { successful: 0, failed: 0, volumeShareRaw: 0 };
@@ -797,6 +821,10 @@ export default function HomePage() {
 
           paymentsProcessedThisBatch++;
         });
+
+        if (newLogsForThisBatch.length > 0) {
+          setTransactionLogs(prevLogs => [...prevLogs, ...newLogsForThisBatch]);
+        }
       } catch (error: any) {
         if (error.name === 'AbortError') {
           console.log("Batch processing aborted");
@@ -805,6 +833,9 @@ export default function HomePage() {
         console.error("Error in batch processing:", error);
       }
 
+      // The redundant loop and declaration for batchSpecificProcessorStats that was here has been removed.
+      // batchSpecificProcessorStats is now declared and populated correctly within the single batchResults.forEach loop inside the try block.
+      
       if (paymentsProcessedThisBatch > 0) {
         setProcessedPaymentsCount(prev => {
           const newTotalProcessed = prev + paymentsProcessedThisBatch;
@@ -822,12 +853,19 @@ export default function HomePage() {
           const newSuccessRateDataPoint: TimeSeriesDataPoint = { time: currentTime };
           const newVolumeDataPoint: TimeSeriesDataPoint = { time: currentTime };
 
+          // Calculate discrete (per-batch) success rates and cumulative volumes
           merchantConnectors.forEach(connector => {
             const key = connector.merchant_connector_id || connector.connector_name;
-            const stats = accumulatedProcessorStatsRef.current[key] || { successful: 0, failed: 0 };
-            const totalForProcessor = stats.successful + stats.failed;
-            newSuccessRateDataPoint[key] = totalForProcessor > 0 ? (stats.successful / totalForProcessor) * 100 : 0;
-            newVolumeDataPoint[key] = totalForProcessor;
+            
+            // Discrete success rate for the batch
+            const batchStats = batchSpecificProcessorStats[key] || { successful: 0, failed: 0 };
+            const batchTotalForProcessor = batchStats.successful + batchStats.failed;
+            newSuccessRateDataPoint[key] = batchTotalForProcessor > 0 ? (batchStats.successful / batchTotalForProcessor) * 100 : 0;
+            
+            // Cumulative volume (original logic)
+            const cumulativeStats = accumulatedProcessorStatsRef.current[key] || { successful: 0, failed: 0 };
+            const cumulativeTotalForProcessor = cumulativeStats.successful + cumulativeStats.failed;
+            newVolumeDataPoint[key] = cumulativeTotalForProcessor;
           });
 
           setSuccessRateHistory(prev => [...prev, newSuccessRateDataPoint]);
@@ -930,6 +968,7 @@ export default function HomePage() {
         numberOfBatches: 100, // New batch processing field
         batchSize: 10, // New batch processing field
         connectorWiseFailurePercentage: {}, // Initialize empty
+        isSuccessBasedRoutingEnabled: true, // Default to true
       });
     } else if (!currentControls) {
       toast({ title: "Error", description: "Control data not available.", variant: "destructive" });

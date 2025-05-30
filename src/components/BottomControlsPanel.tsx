@@ -181,7 +181,7 @@ export function BottomControlsPanel({
       currentBlockThresholdMaxTotalCount: 20, // Default for old field
       minAggregatesSize: 5, // Default for new field
       maxAggregatesSize: 10, // Default for new field
-      isSuccessBasedRoutingEnabled: false,
+      isSuccessBasedRoutingEnabled: true, // Default to true
       ruleConditionField: undefined,
       ruleConditionOperator: undefined,
       ruleConditionValue: undefined,
