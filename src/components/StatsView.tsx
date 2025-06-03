@@ -98,7 +98,7 @@ export function StatsView({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-6 pl-6 pr-6">
-            <CardTitle className="text-sm font-medium">Total Processed</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Amount Processed</CardTitle>
             <ListChecks className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent className="p-6">
@@ -121,7 +121,7 @@ export function StatsView({
         </Card> */}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-6 pl-6 pr-6">
-            <CardTitle className="text-sm font-medium">Total Successful</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Debit Routed Transactions</CardTitle>
             <CheckCircle2 className="h-5 w-5 text-green-500" />
           </CardHeader>
           <CardContent className="p-6">
@@ -133,7 +133,7 @@ export function StatsView({
         </Card>
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-6 pl-6 pr-6">
-            <CardTitle className="text-sm font-medium">Total Failed</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Savings (%)</CardTitle>
             <XCircle className="h-5 w-5 text-red-500" />
           </CardHeader>
           <CardContent className="p-6">
@@ -145,7 +145,8 @@ export function StatsView({
         </Card>
       </div>
       
-      <OverallSuccessRateDisplay rate={overallSR} history={overallSuccessRateHistory} />
+      {/* Remove the OverallSuccessRateDisplay card */}
+      {/* <OverallSuccessRateDisplay rate={overallSR} history={overallSuccessRateHistory} /> */}
       <TransactionDistributionChart data={transactionDistributionData} />
       <ProcessorSuccessRatesTable data={processorSRData} />
     </div>
