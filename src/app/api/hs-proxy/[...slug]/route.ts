@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const HYPERSWITCH_API_BASE_URL = 'https://sandbox.hyperswitch.io';
+const JUSPAY_API_BASE_URL = 'https://sandbox.juspay.in';
 
 // Define a custom RequestInit type that includes 'duplex'
 interface RequestInitWithDuplex extends RequestInit {
@@ -10,33 +11,33 @@ interface RequestInitWithDuplex extends RequestInit {
 async function handler(req: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
   const { slug } = await params;
   const path = slug.join('/');
-  const targetUrl = `${HYPERSWITCH_API_BASE_URL}/${path}`;
-
-  const headers = new Headers();
-  // Forward essential headers from the client
-  const apiKey = req.headers.get('api-key');
-  const contentType = req.headers.get('Content-Type');
-  const accept = req.headers.get('Accept');
-  const xProfileId = req.headers.get('x-profile-id'); // For /profile/connectors
-  const xFeature = req.headers.get('x-feature'); // For dynamic routing success rate call
-
-  if (apiKey) {
-    headers.set('api-key', apiKey);
-  }
-  if (contentType) {
-    headers.set('Content-Type', contentType);
-  }
-  if (accept) {
-    headers.set('Accept', accept);
-  }
-  if (xProfileId) {
-    headers.set('x-profile-id', xProfileId);
-  }
-  if (xFeature) { // Forward x-feature header if present
-    headers.set('x-feature', xFeature);
-  }
   
-  // Add any other headers you might need to forward or set
+  // Determine which API to proxy to
+  let targetUrl: string;
+  let headers = new Headers();
+  
+  if (path.includes('decide-gateway')) {
+    // Route to Juspay for decide-gateway calls
+    targetUrl = `${JUSPAY_API_BASE_URL}/${path}`;
+    headers.set('Content-Type', 'application/json');
+    headers.set('x-merchantid', 'hyperswitchTest');
+  } else {
+    // Existing Hyperswitch routing
+    targetUrl = `${HYPERSWITCH_API_BASE_URL}/${path}`;
+    
+    // Copy existing header logic
+    const apiKey = req.headers.get('api-key');
+    const contentType = req.headers.get('Content-Type');
+    const accept = req.headers.get('Accept');
+    const xProfileId = req.headers.get('x-profile-id');
+    const xFeature = req.headers.get('x-feature');
+    
+    if (apiKey) headers.set('api-key', apiKey);
+    if (contentType) headers.set('Content-Type', contentType);
+    if (accept) headers.set('Accept', accept);
+    if (xProfileId) headers.set('x-profile-id', xProfileId);
+    if (xFeature) headers.set('x-feature', xFeature);
+  }
 
   try {
     const request_body = await req.text(); // Read the request body as text

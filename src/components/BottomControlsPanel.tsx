@@ -955,19 +955,31 @@ export function BottomControlsPanel({
       {activeTab === 'test-payment-data' && (
         parentTab === 'least-cost-routing' ? (
           <div className="flex flex-col gap-6">
-            <h2 className="text-xl font-bold mb-4">Connector-Specific Test Cards</h2>
+            <h2 className="text-xl font-bold mb-4">Test Cards Configuration</h2>
+            
+            {/* Credit Card - NEW */}
+            <div className="border rounded-lg p-4 bg-muted/10">
+              <div className="font-semibold mb-2">Credit Card</div>
+              <div className="mb-1 text-sm">Joseph Doe</div>
+              <div className="mb-1 text-sm">5555555555554444</div>
+              <div className="mb-1 text-sm">12/30 737</div>
+            </div>
+            
+            {/* Existing cards remain unchanged */}
             <div className="border rounded-lg p-4 bg-muted/10">
               <div className="font-semibold mb-2">Not Co-badged Card</div>
               <div className="mb-1 text-sm">Joseph Doe</div>
               <div className="mb-1 text-sm">4111112014267661</div>
               <div className="mb-1 text-sm">12/30 737</div>
             </div>
+            
             <div className="border rounded-lg p-4 bg-muted/10">
               <div className="font-semibold mb-2">Regulated Co-badged Card</div>
               <div className="mb-1 text-sm">Joseph Doe</div>
               <div className="mb-1 text-sm">4400002000000004</div>
               <div className="mb-1 text-sm">03/30 737</div>
             </div>
+            
             <div className="border rounded-lg p-4 bg-muted/10">
               <div className="font-semibold mb-2">Unregulated Co-badged Card</div>
               <div className="mb-1 text-sm">Joseph Doe</div>

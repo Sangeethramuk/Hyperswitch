@@ -24,6 +24,19 @@ interface StatsViewProps {
   successRateHistory?: any;
   volumeHistory?: any;
   connectorToggleStates?: any;
+  lcrStats?: {
+    totalSavingsAmount: number;
+    totalAmountProcessed: number;
+    eligibleCount: number;
+    debitRoutedCount: number;
+    cardTypeDistribution: {
+      credit: number;
+      'not-co-badged': number;
+      regulated: number;
+      unregulated: number;
+      'global-cheaper': number;
+    };
+  };
 }
 
 const CHART_COLORS_HSL = {
@@ -47,6 +60,7 @@ export function StatsView({
   successRateHistory = [],
   volumeHistory = [],
   connectorToggleStates = {},
+  lcrStats,
 }: StatsViewProps) {
   const overallSR = currentControls?.overallSuccessRate ?? 0;
   // const effectiveTps = currentControls?.tps ?? 0; // TPS Removed
@@ -167,6 +181,69 @@ export function StatsView({
           </CardContent>
         </Card>
       </div>
+      
+      {parentTab === 'least-cost-routing' && lcrStats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Overall Savings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {lcrStats.totalAmountProcessed > 0 
+                  ? `${((lcrStats.totalSavingsAmount / lcrStats.totalAmountProcessed) * 100).toFixed(2)}%`
+                  : '0%'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ${lcrStats.totalSavingsAmount.toFixed(2)} saved
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Eligible Transactions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{lcrStats.eligibleCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {processedPayments > 0 
+                  ? `${((lcrStats.eligibleCount / processedPayments) * 100).toFixed(1)}% of total`
+                  : '0% of total'}
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Debit Routed</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{lcrStats.debitRoutedCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {lcrStats.eligibleCount > 0 
+                  ? `${((lcrStats.debitRoutedCount / lcrStats.eligibleCount) * 100).toFixed(1)}% of eligible`
+                  : '0% of eligible'}
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Card Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1 text-xs">
+                <div>Credit: {lcrStats.cardTypeDistribution.credit}</div>
+                <div>Not Co-badged: {lcrStats.cardTypeDistribution['not-co-badged']}</div>
+                <div>Regulated: {lcrStats.cardTypeDistribution.regulated}</div>
+                <div>Unregulated: {lcrStats.cardTypeDistribution.unregulated}</div>
+                <div>Global Cheaper: {lcrStats.cardTypeDistribution['global-cheaper']}</div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       
       <SuccessRateOverTimeChart data={successRateHistory} merchantConnectors={merchantConnectors} connectorToggleStates={connectorToggleStates} />
       <VolumeOverTimeChart data={volumeHistory} merchantConnectors={merchantConnectors} connectorToggleStates={connectorToggleStates} />

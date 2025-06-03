@@ -145,4 +145,31 @@ export interface TransactionLogEntry {
   timestamp: number; // epoch milliseconds, to help with sequencing and time-based analysis
   routingApproach?: 'exploration' | 'exploitation' | 'unknown' | 'N/A'; // Added routing approach
   sr_scores?: Record<string, number>; // Added sr_scores
+  // Add LCR-specific fields
+  lcrData?: {
+    isEligible: boolean;
+    coBadgedNetworks: string[];
+    savingsPercentage: number;
+    selectedNetwork: string;
+    isDebitRouted: boolean;
+    cardType: 'credit' | 'not-co-badged' | 'regulated' | 'unregulated' | 'global-cheaper';
+    cardLabel: string;
+  };
+}
+
+// LCR-specific types
+export interface LCRTestCard {
+  number: string;
+  label: string;
+  amount_range: [number, number];
+  exp_month?: string;
+  payment_type: 'credit' | 'debit';
+}
+
+export interface DebitRoutingResult {
+  isEligible: boolean;
+  coBadgedNetworks: string[];
+  selectedNetwork: string;
+  savingsPercentage: number;
+  isDebitRouted: boolean;
 }

@@ -21,8 +21,29 @@ import { useToast } from '@/hooks/use-toast';
 import { summarizeSimulation } from '@/ai/flows/summarize-simulation-flow'; // AI Summary Re-added
 import SplitPane from 'react-split-pane';
 import { MiniSidebar } from '@/components/MiniSidebar';
+import type { LCRTestCard, DebitRoutingResult } from '@/lib/types';
 
 const SIMULATION_INTERVAL_MS = 50; // Interval between individual payment processing attempts
+
+// LCR Test Cards Configuration - matches pseudocode.py exactly
+const LCR_DEFAULT_TEST_CARDS = {
+  credit: [
+    { number: "5555555555554444", label: "Credit", amount_range: [1, 1] as [number, number], exp_month: "12", payment_type: "credit" as const }
+  ],
+  regulated: [
+    { number: "4400002000000004", label: "Regulated Debit", amount_range: [1, 1] as [number, number], payment_type: "debit" as const }
+  ],
+  unregulated: [
+    { number: "4000033003300335", label: "Unregulated Debit (Special)", amount_range: [12, 1000] as [number, number], payment_type: "debit" as const },
+    { number: "5002510000000013", label: "Unregulated Debit", amount_range: [1, 1] as [number, number], payment_type: "debit" as const }
+  ],
+  globalCheaper: [
+    { number: "4000033003300335", label: "Global Cheaper (Special)", amount_range: [1, 10] as [number, number], payment_type: "debit" as const }
+  ],
+  notCoBadged: [
+    { number: "4111112014267661", label: "Not Co-badged Debit", amount_range: [1, 1] as [number, number], exp_month: "12", payment_type: "debit" as const }
+  ]
+};
 
 const LOCALSTORAGE_API_KEY = 'hyperswitch_apiKey';
 const LOCALSTORAGE_PROFILE_ID = 'hyperswitch_profileId';
@@ -96,6 +117,24 @@ export default function HomePage() {
   const [parentTab, setParentTab] = useState<'intelligent-routing' | 'least-cost-routing'>('intelligent-routing');
   // Content tab: 'stats' or 'analytics', always reset to 'stats' when parentTab changes
   const [contentTab, setContentTab] = useState<'stats' | 'analytics'>('stats');
+
+  // LCR-specific state
+  const [lcrStats, setLcrStats] = useState({
+    totalSavingsAmount: 0,
+    totalAmountProcessed: 0,
+    eligibleCount: 0,
+    debitRoutedCount: 0,
+    cardTypeDistribution: {
+      credit: 0,
+      'not-co-badged': 0,
+      regulated: 0,
+      unregulated: 0,
+      'global-cheaper': 0
+    }
+  });
+
+  // Track card distribution for current simulation
+  const cardDistributionRef = useRef<Array<{ card: LCRTestCard; cardType: string }>>([]);
 
   useEffect(() => {
     // Load credentials from localStorage on initial mount
@@ -505,6 +544,199 @@ export default function HomePage() {
     fetchMerchantConnectors(merchantId, apiKey);
   };
 
+  const getCardForLCRSimulation = useCallback((
+    controls: FormValues,
+    paymentIndex: number
+  ): { card: LCRTestCard; cardType: string } => {
+    // Use pre-calculated distribution
+    if (cardDistributionRef.current.length > paymentIndex) {
+      return cardDistributionRef.current[paymentIndex];
+    }
+    
+    // Fallback to credit card if distribution not available
+    return { 
+      card: LCR_DEFAULT_TEST_CARDS.credit[0], 
+      cardType: 'credit' 
+    };
+  }, []);
+
+  const calculateLCRCardDistribution = useCallback((controls: FormValues) => {
+    const totalPayments = controls.totalPayments;
+    const debitPercent = controls.debitTransactionsPercent || 0;
+    const coBadgedPercent = controls.eligibleTransactionPercent || 0;
+    const regulatedPercent = controls.regulatedIssuerTransactionPercent || 0;
+    const minAmount = controls.minAmount || 1;
+    const maxAmount = controls.maxAmount || 1000;
+    
+    // Calculate distribution following pseudocode.py exactly
+    const numTotalDebitTxns = Math.round(totalPayments * (debitPercent / 100.0));
+    const numCreditTxns = totalPayments - numTotalDebitTxns;
+    
+    const numCoBadgedOfDebit = Math.round(numTotalDebitTxns * (coBadgedPercent / 100.0));
+    const numNotCoBadgedDebit = numTotalDebitTxns - numCoBadgedOfDebit;
+    
+    const numRegulatedDebitRouted = Math.round(numCoBadgedOfDebit * (regulatedPercent / 100.0));
+    const remainingCoBadgedForUnregulatedGlobal = numCoBadgedOfDebit - numRegulatedDebitRouted;
+    
+    const globalNetworkCheaperPercentageOfRemaining = (Math.random() * 10 + 10) / 100.0; // 10-20%
+    const numGlobalNetworkCheaper = Math.round(remainingCoBadgedForUnregulatedGlobal * globalNetworkCheaperPercentageOfRemaining);
+    const numUnregulatedDebitRouted = remainingCoBadgedForUnregulatedGlobal - numGlobalNetworkCheaper;
+    
+    // Handle rounding errors
+    let currentSum = numCreditTxns + numNotCoBadgedDebit + numRegulatedDebitRouted + numGlobalNetworkCheaper + numUnregulatedDebitRouted;
+    let adjustedCounts = {
+      credit: numCreditTxns,
+      notCoBadged: numNotCoBadgedDebit,
+      regulated: numRegulatedDebitRouted,
+      globalCheaper: numGlobalNetworkCheaper,
+      unregulated: numUnregulatedDebitRouted
+    };
+    
+    if (currentSum !== totalPayments) {
+      const diff = totalPayments - currentSum;
+      // Adjust largest category
+      if (diff > 0) {
+        if (adjustedCounts.unregulated > 0) adjustedCounts.unregulated += diff;
+        else if (adjustedCounts.notCoBadged > 0) adjustedCounts.notCoBadged += diff;
+        else if (adjustedCounts.credit > 0) adjustedCounts.credit += diff;
+        else if (adjustedCounts.regulated > 0) adjustedCounts.regulated += diff;
+        else if (adjustedCounts.globalCheaper > 0) adjustedCounts.globalCheaper += diff;
+      } else {
+        const absDiff = Math.abs(diff);
+        if (adjustedCounts.unregulated >= absDiff) adjustedCounts.unregulated += diff;
+        else if (adjustedCounts.notCoBadged >= absDiff) adjustedCounts.notCoBadged += diff;
+        else if (adjustedCounts.credit >= absDiff) adjustedCounts.credit += diff;
+        else if (adjustedCounts.regulated >= absDiff) adjustedCounts.regulated += diff;
+        else if (adjustedCounts.globalCheaper >= absDiff) adjustedCounts.globalCheaper += diff;
+      }
+    }
+    
+    // Create card array with proper amount ranges
+    const cards: Array<{ card: LCRTestCard; cardType: string }> = [];
+    
+    // Add credit cards
+    for (let i = 0; i < adjustedCounts.credit; i++) {
+      const card = { ...LCR_DEFAULT_TEST_CARDS.credit[0] };
+      card.amount_range = [minAmount, maxAmount];
+      cards.push({ card, cardType: 'credit' });
+    }
+    
+    // Add not co-badged cards
+    for (let i = 0; i < adjustedCounts.notCoBadged; i++) {
+      const card = { ...LCR_DEFAULT_TEST_CARDS.notCoBadged[0] };
+      card.amount_range = [minAmount, maxAmount];
+      cards.push({ card, cardType: 'not-co-badged' });
+    }
+    
+    // Add regulated cards
+    for (let i = 0; i < adjustedCounts.regulated; i++) {
+      const card = { ...LCR_DEFAULT_TEST_CARDS.regulated[0] };
+      card.amount_range = [minAmount, maxAmount];
+      cards.push({ card, cardType: 'regulated' });
+    }
+    
+    // Add global cheaper cards
+    for (let i = 0; i < adjustedCounts.globalCheaper; i++) {
+      const card = { ...LCR_DEFAULT_TEST_CARDS.globalCheaper[0] };
+      // Special amount range logic for global cheaper
+      card.amount_range = [minAmount, Math.min(10, maxAmount)];
+      cards.push({ card, cardType: 'global-cheaper' });
+    }
+    
+    // Add unregulated cards
+    for (let i = 0; i < adjustedCounts.unregulated; i++) {
+      const cardOptions = LCR_DEFAULT_TEST_CARDS.unregulated;
+      const selectedCard = { ...cardOptions[Math.floor(Math.random() * cardOptions.length)] };
+      // Special amount range logic for card 4000033003300335
+      if (selectedCard.number === "4000033003300335") {
+        selectedCard.amount_range = [Math.max(12, minAmount), maxAmount];
+      } else {
+        selectedCard.amount_range = [minAmount, maxAmount];
+      }
+      cards.push({ card: selectedCard, cardType: 'unregulated' });
+    }
+    
+    // Shuffle array
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    
+    cardDistributionRef.current = cards;
+  }, []);
+
+  const fetchLeastCostRoute = useCallback(async (
+    paymentId: string,
+    amount: number,
+    cardIsin: string
+  ): Promise<DebitRoutingResult> => {
+    const payload = {
+      merchantId: profileId,
+      eligibleGatewayList: [paymentId],
+      rankingAlgorithm: "NTW_BASED_ROUTING",
+      eliminationEnabled: true,
+      paymentInfo: {
+        paymentId,
+        amount: amount / 100, // Convert cents to dollars
+        currency: "USD",
+        customerId: "CUST12345",
+        udfs: null,
+        preferredGateway: null,
+        paymentType: "MOTO_PAYMENT",
+        metadata: JSON.stringify({
+          merchant_category_code: "merchant_category_code_0001",
+          acquirer_country: "US"
+        }),
+        internalMetadata: null,
+        isEmi: false,
+        emiBank: null,
+        emiTenure: null,
+        paymentMethodType: "CARD",
+        paymentMethod: "null",
+        paymentSource: null,
+        authType: null,
+        cardIssuerBankName: null,
+        cardIsin: cardIsin,
+        cardType: null,
+        cardSwitchProvider: null
+      }
+    };
+    
+    try {
+      const response = await fetch('/api/hs-proxy/decide-gateway', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const data = await response.json();
+      const debitOutput = data.debit_routing_output || {};
+      const networks = debitOutput.co_badged_card_networks || [];
+      const savingsPercentage = debitOutput.saving_percentage || 0;
+      
+      const debitNetworks = new Set(["ACCEL", "STAR", "PULSE", "NYCE"]);
+      const selectedNetwork = networks[0] || "N/A";
+      const isDebitRouted = debitNetworks.has(selectedNetwork.toUpperCase());
+      
+      return {
+        isEligible: networks.length > 0,
+        coBadgedNetworks: networks,
+        selectedNetwork,
+        savingsPercentage,
+        isDebitRouted
+      };
+    } catch (error) {
+      console.error("[LCR] Decide Gateway Error:", error);
+      return {
+        isEligible: false,
+        coBadgedNetworks: [],
+        selectedNetwork: "N/A",
+        savingsPercentage: 0,
+        isDebitRouted: false
+      };
+    }
+  }, [profileId]);
+
   const resetSimulationState = () => {
     setProcessedPaymentsCount(0);
     setCurrentBatchNumber(0);
@@ -517,6 +749,24 @@ export default function HomePage() {
     setTransactionLogs([]); // Reset logs
     transactionCounterRef.current = 0; // Reset counter
     setSummaryAttempted(false); // Reset summary attempt flag
+
+    // Reset LCR stats when in LCR mode
+    if (parentTab === 'least-cost-routing') {
+      setLcrStats({
+        totalSavingsAmount: 0,
+        totalAmountProcessed: 0,
+        eligibleCount: 0,
+        debitRoutedCount: 0,
+        cardTypeDistribution: {
+          credit: 0,
+          'not-co-badged': 0,
+          regulated: 0,
+          unregulated: 0,
+          'global-cheaper': 0
+        }
+      });
+      cardDistributionRef.current = [];
+    }
 
     setCurrentControls(prev => {
       if (!prev) {
@@ -554,159 +804,312 @@ export default function HomePage() {
       throw new Error('Missing required configuration');
     }
 
-    const paymentMethodForAPI = "card";
-
-    // Determine initial card details (will be overridden if SBR selects a connector)
-    // Pass "" initially as connectorName, so it uses global fallbacks if SBR is off or no connector is chosen
-    let cardDetailsForPayment = getCarddetailsForPayment(currentControls, "");
-
-
-    const paymentData = {
-      amount: 6540,
-      currency: "USD",
-      confirm: true,
-      profile_id: profileId,
-      capture_method: "automatic",
-      authentication_type: "no_three_ds",
-      customer: {
-        id: `cus_sim_${Date.now()}_${paymentIndex}`,
-        name: "John Doe",
-        email: "customer@example.com",
-        phone: "9999999999",
-        phone_country_code: "+1"
-      },
-      payment_method: paymentMethodForAPI,
-      payment_method_type: "credit",
-      payment_method_data: {
-        card: cardDetailsForPayment, // Use the determined card details
-        billing: {
-          address: {
-            line1: "1467",
-            line2: "Harrison Street",
-            line3: "Harrison Street",
-            city: "San Francisco",
-            state: "California",
-            zip: "94122",
-            country: "US",
-            first_name: "Joseph",
-            last_name: "Doe"
-          },
-          phone: { number: "8056594427", country_code: "+91" },
-          email: "guest@example.com"
-        }
-      },
-    };
-
-    // Fetch success rate and determine routing
-    let routingApproach: TransactionLogEntry['routingApproach'] = 'N/A';
-    let returnedConnectorLabel: string | null = null;
-    let srScores: Record<string, number> | undefined = undefined;
-
-    const activeConnectorLabels = merchantConnectors
-      .filter(mc => connectorToggleStates[mc.merchant_connector_id || mc.connector_name])
-      .map(mc => mc.connector_name);
-
-    if (activeConnectorLabels.length > 0 && profileId) {
-      const { selectedConnector, routingApproach: approach, srScores: scores } = await fetchSuccessRateAndSelectConnector(
-        currentControls,
-        activeConnectorLabels,
-        apiKey,
-        profileId
-      );
-      returnedConnectorLabel = selectedConnector;
-      routingApproach = approach;
-      srScores = scores;
-    } else {
-      routingApproach = 'unknown';
-    }
-
-    // Apply routing if Success Based Routing is enabled
-    if (currentControls.isSuccessBasedRoutingEnabled && returnedConnectorLabel) {
-      const matchedConnector = merchantConnectors.find(mc => mc.connector_name === returnedConnectorLabel);
-      if (matchedConnector) {
-        (paymentData as any).routing = {
-          type: "single",
-          data: {
-            connector: matchedConnector.connector_name,
-            merchant_connector_id: matchedConnector.merchant_connector_id
-          }
-        };
-        (paymentData as any).payment_method_data.card = getCarddetailsForPayment(currentControls, matchedConnector.connector_name);
-      }
-    }
-
-    // Make payment request
-    let isSuccess = false;
-    let routedProcessorId: string | null = null;
-    let logEntry: TransactionLogEntry | null = null;
-
-    try {
-      const response = await fetch('/api/hs-proxy/payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'api-key': apiKey
+    // Add parentTab check at the beginning
+    if (parentTab === 'least-cost-routing') {
+      // LCR Mode - completely separate logic
+      const { card, cardType } = getCardForLCRSimulation(currentControls, paymentIndex);
+      
+      // Generate random amount within card's range
+      const [minAmt, maxAmt] = card.amount_range;
+      const amount = Math.floor(Math.random() * (maxAmt - minAmt + 1)) + minAmt;
+      
+      const paymentData = {
+        amount: amount * 100, // Convert to cents
+        currency: "USD",
+        confirm: true,
+        profile_id: profileId,
+        capture_method: "automatic",
+        authentication_type: "no_three_ds",
+        customer: {
+          id: `cus_sim_${Date.now()}_${paymentIndex}`,
+          name: "John Doe",
+          email: "customer@example.com",
+          phone: "9999999999",
+          phone_country_code: "+1"
         },
-        body: JSON.stringify(paymentData),
-        signal,
-      });
-
-      const paymentStatusHeader = response.headers.get('x-simulation-payment-status');
-      const connectorHeader = response.headers.get('x-simulation-payment-connector');
-      const responseData = await response.json();
-
-      isSuccess = response.ok && (
-        responseData.status === 'succeeded' ||
-        responseData.status === 'requires_capture' ||
-        responseData.status === 'processing'
-      );
-
-      // Create log entry
-      let loggedConnectorName = connectorHeader || responseData.connector_name || responseData.merchant_connector_id || 'unknown';
-      if (paymentStatusHeader || responseData.status) {
+        payment_method: "card",
+        payment_method_type: card.payment_type,
+        payment_method_data: {
+          card: {
+            card_number: card.number,
+            card_exp_month: card.exp_month || "03",
+            card_exp_year: "30",
+            card_holder_name: "Joseph Doe",
+            card_cvc: "737"
+          },
+          billing: {
+            address: {
+              line1: "1467",
+              line2: "Harrison Street",
+              line3: "Harrison Street",
+              city: "San Francisco",
+              state: "California",
+              zip: "94122",
+              country: "US",
+              first_name: "Joseph",
+              last_name: "Doe"
+            },
+            phone: { number: "8056594427", country_code: "+91" },
+            email: "guest@example.com"
+          }
+        },
+        metadata: { udf1: "value1", simulation_type: "debit_routing" }
+      };
+      
+      // Make payment request
+      let isSuccess = false;
+      let routedProcessorId: string | null = null;
+      let logEntry: TransactionLogEntry | null = null;
+      
+      try {
+        const response = await fetch('/api/hs-proxy/payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': apiKey,
+            'x-feature': 'router-custom'
+          },
+          body: JSON.stringify(paymentData),
+          signal,
+        });
+        
+        const responseData = await response.json();
+        const paymentStatus = responseData.status;
+        const connectorName = responseData.connector || responseData.connector_name || 'unknown';
+        const cardIsin = responseData.payment_method_data?.card?.card_isin || '';
+        
+        isSuccess = response.ok && (
+          paymentStatus === 'succeeded' ||
+          paymentStatus === 'requires_capture' ||
+          paymentStatus === 'processing'
+        );
+        
+        // Call decide-gateway for debit cards
+        let lcrData = undefined;
+        if (card.payment_type === 'debit' && isSuccess && responseData.payment_id) {
+          const lcrDecision = await fetchLeastCostRoute(
+            responseData.payment_id,
+            amount * 100, // Amount in cents
+            cardIsin
+          );
+          lcrData = {
+            ...lcrDecision,
+            cardType: cardType as any,
+            cardLabel: card.label
+          };
+        } else if (card.payment_type === 'credit') {
+          // Credit cards are not eligible for debit routing
+          lcrData = {
+            isEligible: false,
+            coBadgedNetworks: [],
+            savingsPercentage: 0,
+            selectedNetwork: 'N/A',
+            isDebitRouted: false,
+            cardType: 'credit' as any,
+            cardLabel: card.label
+          };
+        }
+        
+        // Create log entry
         transactionCounterRef.current += 1;
         logEntry = {
           transactionNumber: transactionCounterRef.current,
-          status: paymentStatusHeader || responseData.status,
-          connector: loggedConnectorName,
+          status: paymentStatus || 'failed',
+          connector: connectorName,
           timestamp: Date.now(),
-          routingApproach,
-          sr_scores: srScores,
+          lcrData
         };
+        
+        // Update LCR stats
+        if (lcrData) {
+          setLcrStats(prev => ({
+            totalAmountProcessed: prev.totalAmountProcessed + amount,
+            totalSavingsAmount: prev.totalSavingsAmount + (amount * lcrData.savingsPercentage / 100),
+            eligibleCount: prev.eligibleCount + (lcrData.isEligible ? 1 : 0),
+            debitRoutedCount: prev.debitRoutedCount + (lcrData.isDebitRouted ? 1 : 0),
+            cardTypeDistribution: {
+              ...prev.cardTypeDistribution,
+              [cardType]: prev.cardTypeDistribution[cardType as keyof typeof prev.cardTypeDistribution] + 1
+            }
+          }));
+        }
+        
+        // Find processor ID
+        if (connectorName && connectorName !== 'unknown') {
+          const mc = merchantConnectors.find(m => 
+            m.connector_name === connectorName || 
+            m.merchant_connector_id === connectorName
+          );
+          if (mc) routedProcessorId = mc.merchant_connector_id || mc.connector_name;
+        }
+        
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error("Error during LCR payment:", error);
+        }
+        throw error;
       }
+      
+      return { isSuccess, routedProcessorId, logEntry };
+    } else {
+      // Existing Intelligent Routing logic - COMPLETELY UNCHANGED
+      const paymentMethodForAPI = "card";
 
-      // Determine routedProcessorId
-      if (responseData.connector_name) {
-        const mc = merchantConnectors.find(m => m.connector_name === responseData.connector_name);
-        if (mc) routedProcessorId = mc.merchant_connector_id || mc.connector_name;
-      } else if (responseData.merchant_connector_id) {
-        routedProcessorId = responseData.merchant_connector_id;
-      }
+      // Determine initial card details (will be overridden if SBR selects a connector)
+      // Pass "" initially as connectorName, so it uses global fallbacks if SBR is off or no connector is chosen
+      let cardDetailsForPayment = getCarddetailsForPayment(currentControls, "");
 
-      if (!routedProcessorId && loggedConnectorName !== 'unknown') {
-        const mc = merchantConnectors.find(m => m.connector_name === loggedConnectorName);
-        if (mc) routedProcessorId = mc.merchant_connector_id || mc.connector_name;
-        else routedProcessorId = loggedConnectorName;
-      }
 
-      // Update success rate window
-      if (profileId && loggedConnectorName !== 'unknown') {
-        const foundConnector = merchantConnectors.find(mc =>
-          mc.connector_name === loggedConnectorName || mc.merchant_connector_id === loggedConnectorName
+      const paymentData = {
+        amount: 6540,
+        currency: "USD",
+        confirm: true,
+        profile_id: profileId,
+        capture_method: "automatic",
+        authentication_type: "no_three_ds",
+        customer: {
+          id: `cus_sim_${Date.now()}_${paymentIndex}`,
+          name: "John Doe",
+          email: "customer@example.com",
+          phone: "9999999999",
+          phone_country_code: "+1"
+        },
+        payment_method: paymentMethodForAPI,
+        payment_method_type: "credit",
+        payment_method_data: {
+          card: cardDetailsForPayment, // Use the determined card details
+          billing: {
+            address: {
+              line1: "1467",
+              line2: "Harrison Street",
+              line3: "Harrison Street",
+              city: "San Francisco",
+              state: "California",
+              zip: "94122",
+              country: "US",
+              first_name: "Joseph",
+              last_name: "Doe"
+            },
+            phone: { number: "8056594427", country_code: "+91" },
+            email: "guest@example.com"
+          }
+        },
+      };
+
+      // Fetch success rate and determine routing
+      let routingApproach: TransactionLogEntry['routingApproach'] = 'N/A';
+      let returnedConnectorLabel: string | null = null;
+      let srScores: Record<string, number> | undefined = undefined;
+
+      const activeConnectorLabels = merchantConnectors
+        .filter(mc => connectorToggleStates[mc.merchant_connector_id || mc.connector_name])
+        .map(mc => mc.connector_name);
+
+      if (activeConnectorLabels.length > 0 && profileId) {
+        const { selectedConnector, routingApproach: approach, srScores: scores } = await fetchSuccessRateAndSelectConnector(
+          currentControls,
+          activeConnectorLabels,
+          apiKey,
+          profileId
         );
-        const connectorNameForUpdate = foundConnector ? foundConnector.connector_name : loggedConnectorName;
-        await updateSuccessRateWindow(profileId, connectorNameForUpdate, isSuccess, currentControls);
+        returnedConnectorLabel = selectedConnector;
+        routingApproach = approach;
+        srScores = scores;
+      } else {
+        routingApproach = 'unknown';
       }
-    } catch (error: any) {
-      if (error.name !== 'AbortError') {
-        console.error("Error during payment API call:", error);
-      }
-      throw error;
-    }
 
-    return { isSuccess, routedProcessorId, logEntry };
-  }, [currentControls, apiKey, profileId, merchantConnectors, connectorToggleStates, fetchSuccessRateAndSelectConnector, updateSuccessRateWindow]);
+      // Apply routing if Success Based Routing is enabled
+      if (currentControls.isSuccessBasedRoutingEnabled && returnedConnectorLabel) {
+        const matchedConnector = merchantConnectors.find(mc => mc.connector_name === returnedConnectorLabel);
+        if (matchedConnector) {
+          (paymentData as any).routing = {
+            type: "single",
+            data: {
+              connector: matchedConnector.connector_name,
+              merchant_connector_id: matchedConnector.merchant_connector_id
+            }
+          };
+          (paymentData as any).payment_method_data.card = getCarddetailsForPayment(currentControls, matchedConnector.connector_name);
+        }
+      }
+
+      // Make payment request
+      let isSuccess = false;
+      let routedProcessorId: string | null = null;
+      let logEntry: TransactionLogEntry | null = null;
+
+      try {
+        const response = await fetch('/api/hs-proxy/payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': apiKey
+          },
+          body: JSON.stringify(paymentData),
+          signal,
+        });
+
+        const paymentStatusHeader = response.headers.get('x-simulation-payment-status');
+        const connectorHeader = response.headers.get('x-simulation-payment-connector');
+        const responseData = await response.json();
+
+        isSuccess = response.ok && (
+          responseData.status === 'succeeded' ||
+          responseData.status === 'requires_capture' ||
+          responseData.status === 'processing'
+        );
+
+        // Create log entry
+        let loggedConnectorName = connectorHeader || responseData.connector_name || responseData.merchant_connector_id || 'unknown';
+        if (paymentStatusHeader || responseData.status) {
+          transactionCounterRef.current += 1;
+          logEntry = {
+            transactionNumber: transactionCounterRef.current,
+            status: paymentStatusHeader || responseData.status,
+            connector: loggedConnectorName,
+            timestamp: Date.now(),
+            routingApproach,
+            sr_scores: srScores,
+          };
+        }
+
+        // Determine routedProcessorId
+        if (responseData.connector_name) {
+          const mc = merchantConnectors.find(m => m.connector_name === responseData.connector_name);
+          if (mc) routedProcessorId = mc.merchant_connector_id || mc.connector_name;
+        } else if (responseData.merchant_connector_id) {
+          routedProcessorId = responseData.merchant_connector_id;
+        }
+
+        if (!routedProcessorId && loggedConnectorName !== 'unknown') {
+          const mc = merchantConnectors.find(m => m.connector_name === loggedConnectorName);
+          if (mc) routedProcessorId = mc.merchant_connector_id || mc.connector_name;
+          else routedProcessorId = loggedConnectorName;
+        }
+
+        // Update success rate window
+        if (profileId && loggedConnectorName !== 'unknown') {
+          const foundConnector = merchantConnectors.find(mc =>
+            mc.connector_name === loggedConnectorName || mc.merchant_connector_id === loggedConnectorName
+          );
+          const connectorNameForUpdate = foundConnector ? foundConnector.connector_name : loggedConnectorName;
+          await updateSuccessRateWindow(profileId, connectorNameForUpdate, isSuccess, currentControls);
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error("Error during payment API call:", error);
+        }
+        throw error;
+      }
+
+      return { isSuccess, routedProcessorId, logEntry };
+    }
+  }, [currentControls, apiKey, profileId, merchantConnectors, connectorToggleStates, 
+      fetchSuccessRateAndSelectConnector, updateSuccessRateWindow, parentTab, 
+      getCardForLCRSimulation, fetchLeastCostRoute]);
 
   const getCarddetailsForPayment = (currentControls: FormValues, connectorNameToUse: string): any => {
     let cardDetailsToUse;
@@ -1016,6 +1419,10 @@ export default function HomePage() {
     if (previousSimulationState === 'idle' || forceStart) {
       console.log("Resetting simulation state.");
       resetSimulationState();
+      // Calculate LCR distribution after reset if in LCR mode
+      if (parentTab === 'least-cost-routing' && currentControls) {
+        calculateLCRCardDistribution(currentControls);
+      }
     } else {
       console.log("Not resetting simulation state (resuming or already running).");
     }
@@ -1025,7 +1432,7 @@ export default function HomePage() {
     setSimulationState('running');
     // Use previousSimulationState for the toast message to accurately reflect the action taken
     toast({ title: `Simulation ${previousSimulationState === 'idle' || forceStart ? 'Started' : 'Resumed'}`, description: `Processing ${currentControls?.totalPayments || 0} payments.` });
-  }, [currentControls, apiKey, profileId, merchantId, merchantConnectors, toast, simulationState]); // simulationState is still a dependency for useCallback re-creation if needed by other parts of its logic, even if previousSimulationState is used for the toast.
+  }, [currentControls, apiKey, profileId, merchantId, merchantConnectors, toast, simulationState, parentTab, calculateLCRCardDistribution]); // simulationState is still a dependency for useCallback re-creation if needed by other parts of its logic, even if previousSimulationState is used for the toast.
 
   const handlePauseSimulation = useCallback(() => {
     if (simulationState === 'running') {
@@ -1206,6 +1613,7 @@ export default function HomePage() {
                             successRateHistory={successRateHistory}
                             volumeHistory={volumeHistory}
                             connectorToggleStates={connectorToggleStates}
+                            lcrStats={lcrStats}
                           />
                         </div>
                       </ScrollArea>
@@ -1237,6 +1645,7 @@ export default function HomePage() {
                           successRateHistory={successRateHistory}
                           volumeHistory={volumeHistory}
                           connectorToggleStates={connectorToggleStates}
+                          lcrStats={lcrStats}
                         />
                       </div>
                     </ScrollArea>
@@ -1277,6 +1686,35 @@ export default function HomePage() {
                                 {Object.entries(log.sr_scores).map(([name, score]) => (
                                   <div key={name}>{name}: {score.toFixed(2)}</div>
                                 ))}
+                              </div>
+                            </div>
+                          )}
+                          {log.lcrData && parentTab === 'least-cost-routing' && (
+                            <div className="mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                <div><span className="font-semibold">Card Type:</span> {log.lcrData.cardLabel}</div>
+                                <div><span className="font-semibold">Eligible:</span> 
+                                  <span className={log.lcrData.isEligible ? 'text-green-600' : 'text-gray-500'}>
+                                    {log.lcrData.isEligible ? 'Yes' : 'No'}
+                                  </span>
+                                </div>
+                                {log.lcrData.isEligible && (
+                                  <>
+                                    <div className="col-span-2">
+                                      <span className="font-semibold">Networks:</span> {log.lcrData.coBadgedNetworks.join(', ')}
+                                    </div>
+                                    <div><span className="font-semibold">Selected:</span> {log.lcrData.selectedNetwork}</div>
+                                    <div><span className="font-semibold">Savings:</span> 
+                                      <span className="text-green-600">{log.lcrData.savingsPercentage.toFixed(2)}%</span>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <span className="font-semibold">Debit Routed:</span> 
+                                      <span className={log.lcrData.isDebitRouted ? 'text-blue-600' : 'text-orange-600'}>
+                                        {log.lcrData.isDebitRouted ? 'Yes (Debit Network)' : 'No (Global Network)'}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
                           )}
