@@ -443,7 +443,7 @@ export default function HomePage() {
           processorIncidents: initialProcessorIncidents,
           processorMatrix: initialProcessorMatrix,
           overallSuccessRate: base.overallSuccessRate || 0,
-          connectorWiseFailurePercentage: connectorWiseFailurePercentage,
+          connectorWiseFailurePercentage: prev?.connectorWiseFailurePercentage ? prev.connectorWiseFailurePercentage : connectorWiseFailurePercentage,
         };
       });
 
