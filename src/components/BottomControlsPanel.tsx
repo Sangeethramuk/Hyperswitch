@@ -212,7 +212,7 @@ export function BottomControlsPanel({
         successCard: {
           cardNumber: globalStoredCards.successCardNumber || "4242424242424242",
           expMonth: globalStoredCards.successCardExpMonth || "10",
-          expYear: globalStoredCards.successCardExpYear || "25",
+          expYear: globalStoredCards.successCardExpYear || "26",
           holderName: globalStoredCards.successCardHolderName || "Joseph Doe",
           cvc: globalStoredCards.successCardCvc || "123",
         },

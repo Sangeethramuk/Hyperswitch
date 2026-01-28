@@ -746,7 +746,7 @@ export default function HomePage() {
       cardDetailsToUse = {
         card_number: connectorCards?.successCard?.cardNumber || "4242424242424242",
         card_exp_month: connectorCards?.successCard?.expMonth || "10",
-        card_exp_year: connectorCards?.successCard?.expYear || "25",
+        card_exp_year: connectorCards?.successCard?.expYear || "26",
         card_holder_name: connectorCards?.successCard?.holderName || "Joseph Doe",
         card_cvc: connectorCards?.successCard?.cvc || "123",
       };
