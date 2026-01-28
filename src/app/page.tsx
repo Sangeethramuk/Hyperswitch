@@ -13,12 +13,12 @@ import { AnalyticsGraphsView } from '@/components/AnalyticsGraphsView';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react'; // AI Summary Re-added
-import ReactMarkdown from 'react-markdown';
+// import { Loader2 } from 'lucide-react'; // AI Summary Re-added - COMMENTED OUT
+// import ReactMarkdown from 'react-markdown'; // COMMENTED OUT
 import type { PaymentMethod, ProcessorMetricsHistory, StructuredRule, ControlsState, OverallSRHistory, OverallSRHistoryDataPoint, TimeSeriesDataPoint, MerchantConnector, TransactionLogEntry, AISummaryInput, AISummaryOutput } from '@/lib/types';
 import { PAYMENT_METHODS, /*RULE_STRATEGY_NODES*/ } from '@/lib/constants'; // RULE_STRATEGY_NODES removed
 import { useToast } from '@/hooks/use-toast';
-import { summarizeSimulation } from '@/ai/flows/summarize-simulation-flow'; // AI Summary Re-added
+// import { summarizeSimulation } from '@/ai/flows/summarize-simulation-flow'; // AI Summary Re-added - COMMENTED OUT
 import SplitPane from 'react-split-pane';
 import { MiniSidebar } from '@/components/MiniSidebar';
 
@@ -78,11 +78,11 @@ export default function HomePage() {
   const [transactionLogs, setTransactionLogs] = useState<TransactionLogEntry[]>([]);
   const transactionCounterRef = useRef<number>(0);
 
-  // State for AI Summary Modal
-  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState<boolean>(false);
-  const [summaryText, setSummaryText] = useState<string>('');
-  const [isSummarizing, setIsSummarizing] = useState<boolean>(false);
-  const [summaryAttempted, setSummaryAttempted] = useState<boolean>(false); // New state
+  // State for AI Summary Modal - COMMENTED OUT
+  // const [isSummaryModalOpen, setIsSummaryModalOpen] = useState<boolean>(false);
+  // const [summaryText, setSummaryText] = useState<string>('');
+  // const [isSummarizing, setIsSummarizing] = useState<boolean>(false);
+  // const [summaryAttempted, setSummaryAttempted] = useState<boolean>(false); // New state
 
 
   const { toast } = useToast();
@@ -516,7 +516,7 @@ export default function HomePage() {
     accumulatedGlobalStatsRef.current = { totalSuccessful: 0, totalFailed: 0 };
     setTransactionLogs([]); // Reset logs
     transactionCounterRef.current = 0; // Reset counter
-    setSummaryAttempted(false); // Reset summary attempt flag
+    // setSummaryAttempted(false); // Reset summary attempt flag - COMMENTED OUT
 
     setCurrentControls(prev => {
       if (!prev) {
@@ -1036,67 +1036,67 @@ export default function HomePage() {
     }
   }, [simulationState, toast]);
 
-  // New function to execute the summary
-  const executeAiSummary = useCallback(async () => {
-    if (!currentControls || transactionLogs.length === 0) {
-      // Should have been checked by handleRequestAiSummary, but good for safety
-      toast({ title: "Error", description: "Missing data for summary.", variant: "destructive" });
-      return;
-    }
+  // New function to execute the summary - COMMENTED OUT
+  // const executeAiSummary = useCallback(async () => {
+  //   if (!currentControls || transactionLogs.length === 0) {
+  //     // Should have been checked by handleRequestAiSummary, but good for safety
+  //     toast({ title: "Error", description: "Missing data for summary.", variant: "destructive" });
+  //     return;
+  //   }
 
-    setIsSummaryModalOpen(true);
-    setIsSummarizing(true);
-    setSummaryText('');
-    // summaryAttempted is set by handleRequestAiSummary
+  //   setIsSummaryModalOpen(true);
+  //   setIsSummarizing(true);
+  //   setSummaryText('');
+  //   // summaryAttempted is set by handleRequestAiSummary
 
-    try {
-      console.log("Executing AI summary.");
-      const summaryInput: AISummaryInput = {
-        totalPaymentsProcessed: processedPaymentsCount,
-        targetTotalPayments: currentControls.totalPayments,
-        overallSuccessRate: currentControls.overallSuccessRate || 0,
-        totalSuccessful: accumulatedGlobalStatsRef.current.totalSuccessful,
-        totalFailed: accumulatedGlobalStatsRef.current.totalFailed,
-        effectiveTps: 0, // This would need calculation if required by the prompt
-        processorMetrics: Object.entries(currentControls.processorWiseSuccessRates || {}).map(([name, metrics]) => ({
-          name,
-          volume: metrics.totalPaymentCount,
-          observedSr: metrics.totalPaymentCount > 0 ? (metrics.successfulPaymentCount / metrics.totalPaymentCount) * 100 : 0,
-          baseSr: metrics.sr, // Assuming 'sr' is the base SR from UI
-        })),
-        incidents: Object.entries(currentControls.processorIncidents || {}).map(([processorName, isActive]) => ({
-          processorName,
-          isActive: isActive !== null,
-        })),
-        simulationDurationSteps: overallSuccessRateHistory.length,
-        transactionLogs: transactionLogs,
-      };
+  //   try {
+  //     console.log("Executing AI summary.");
+  //     const summaryInput: AISummaryInput = {
+  //       totalPaymentsProcessed: processedPaymentsCount,
+  //       targetTotalPayments: currentControls.totalPayments,
+  //       overallSuccessRate: currentControls.overallSuccessRate || 0,
+  //       totalSuccessful: accumulatedGlobalStatsRef.current.totalSuccessful,
+  //       totalFailed: accumulatedGlobalStatsRef.current.totalFailed,
+  //       effectiveTps: 0, // This would need calculation if required by the prompt
+  //       processorMetrics: Object.entries(currentControls.processorWiseSuccessRates || {}).map(([name, metrics]) => ({
+  //         name,
+  //         volume: metrics.totalPaymentCount,
+  //         observedSr: metrics.totalPaymentCount > 0 ? (metrics.successfulPaymentCount / metrics.totalPaymentCount) * 100 : 0,
+  //         baseSr: metrics.sr, // Assuming 'sr' is the base SR from UI
+  //       })),
+  //       incidents: Object.entries(currentControls.processorIncidents || {}).map(([processorName, isActive]) => ({
+  //         processorName,
+  //         isActive: isActive !== null,
+  //       })),
+  //       simulationDurationSteps: overallSuccessRateHistory.length,
+  //       transactionLogs: transactionLogs,
+  //     };
 
-      const result: AISummaryOutput = await summarizeSimulation(summaryInput);
-      setSummaryText(result.summaryText);
-    } catch (error: any) {
-      console.error("Error generating AI summary:", error);
-      setSummaryText("Failed to generate summary. Please check the console for errors.");
-      toast({ title: "AI Summary Error", description: error.message || "Could not generate summary.", variant: "destructive" });
-    } finally {
-      setIsSummarizing(false);
-    }
-  }, [currentControls, processedPaymentsCount, transactionLogs, overallSuccessRateHistory, toast, accumulatedGlobalStatsRef, accumulatedProcessorStatsRef, setIsSummaryModalOpen, setIsSummarizing, setSummaryText]);
+  //     const result: AISummaryOutput = await summarizeSimulation(summaryInput);
+  //     setSummaryText(result.summaryText);
+  //   } catch (error: any) {
+  //     console.error("Error generating AI summary:", error);
+  //     setSummaryText("Failed to generate summary. Please check the console for errors.");
+  //     toast({ title: "AI Summary Error", description: error.message || "Could not generate summary.", variant: "destructive" });
+  //   } finally {
+  //     setIsSummarizing(false);
+  //   }
+  // }, [currentControls, processedPaymentsCount, transactionLogs, overallSuccessRateHistory, toast, accumulatedGlobalStatsRef, accumulatedProcessorStatsRef, setIsSummaryModalOpen, setIsSummarizing, setSummaryText]);
 
 
-  const handleRequestAiSummary = useCallback(() => {
-    if (!currentControls) {
-      toast({ title: "Error", description: "Cannot generate summary without simulation data.", variant: "destructive" });
-      return;
-    }
-    if (transactionLogs.length === 0) {
-      toast({ title: "No Data", description: "No transactions logged to summarize." });
-      return;
-    }
+  // const handleRequestAiSummary = useCallback(() => {
+  //   if (!currentControls) {
+  //     toast({ title: "Error", description: "Cannot generate summary without simulation data.", variant: "destructive" });
+  //     return;
+  //   }
+  //   if (transactionLogs.length === 0) {
+  //     toast({ title: "No Data", description: "No transactions logged to summarize." });
+  //     return;
+  //   }
 
-    setSummaryAttempted(true); // Mark that an attempt to get summary has started
-    executeAiSummary(); // Directly call summary generation
-  }, [currentControls, transactionLogs, toast, setSummaryAttempted, executeAiSummary]);
+  //   setSummaryAttempted(true); // Mark that an attempt to get summary has started
+  //   executeAiSummary(); // Directly call summary generation
+  // }, [currentControls, transactionLogs, toast, setSummaryAttempted, executeAiSummary]);
 
   const handleStopSimulation = useCallback(() => {
     if (simulationState !== 'idle') {
@@ -1104,32 +1104,32 @@ export default function HomePage() {
       setSimulationState('idle');
       if (apiCallAbortControllerRef.current) apiCallAbortControllerRef.current.abort();
       toast({ title: "Simulation Stopped", description: `Processed ${processedPaymentsCount} payments.` });
-      if (transactionLogs.length > 0) {
-        handleRequestAiSummary();
-      }
+      // if (transactionLogs.length > 0) {
+      //   handleRequestAiSummary();
+      // }
     }
-  }, [simulationState, processedPaymentsCount, toast, transactionLogs, handleRequestAiSummary]);
+  }, [simulationState, processedPaymentsCount, toast, transactionLogs]);
 
-  // Effect to trigger summary when simulation completes naturally
-  useEffect(() => {
-    if (
-      simulationState === 'idle' &&
-      processedPaymentsCount > 0 &&
-      currentControls &&
-      processedPaymentsCount >= currentControls.totalPayments &&
-      transactionLogs.length > 0 &&
-      !summaryAttempted // Only attempt if not already attempted for this run
-    ) {
-      handleRequestAiSummary();
-    }
-  }, [
-    simulationState,
-    processedPaymentsCount,
-    currentControls,
-    transactionLogs,
-    handleRequestAiSummary,
-    summaryAttempted // Add new dependency
-  ]);
+  // Effect to trigger summary when simulation completes naturally - COMMENTED OUT
+  // useEffect(() => {
+  //   if (
+  //     simulationState === 'idle' &&
+  //     processedPaymentsCount > 0 &&
+  //     currentControls &&
+  //     processedPaymentsCount >= currentControls.totalPayments &&
+  //     transactionLogs.length > 0 &&
+  //     !summaryAttempted // Only attempt if not already attempted for this run
+  //   ) {
+  //     handleRequestAiSummary();
+  //   }
+  // }, [
+  //   simulationState,
+  //   processedPaymentsCount,
+  //   currentControls,
+  //   transactionLogs,
+  //   handleRequestAiSummary,
+  //   summaryAttempted // Add new dependency
+  // ]);
 
   return (
     <>
@@ -1286,8 +1286,8 @@ export default function HomePage() {
       </Dialog>
 
 
-      {/* AI Summary Modal */}
-      <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
+      {/* AI Summary Modal - COMMENTED OUT */}
+      {/* <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Simulation Summary</DialogTitle>
@@ -1314,7 +1314,7 @@ export default function HomePage() {
             <Button type="button" onClick={() => setIsSummaryModalOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
     </>
   );
 }
